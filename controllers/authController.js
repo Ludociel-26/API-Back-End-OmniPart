@@ -12,7 +12,7 @@ import {
 const getCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   maxAge: 12 * 60 * 60 * 1000, // 12 horas
 });
 
@@ -162,12 +162,15 @@ export const login = async (req, res) => {
 // =======================================================================
 export const logout = async (req, res) => {
   try {
-    // Al limpiar, respetamos las mismas políticas para destruir la cookie correctamente
-    res.clearCookie('token', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    // En lugar de clearCookie, sobrescribimos el token usando getCookieOptions()
+    // para garantizar que las reglas (secure, sameSite) sean exactamente idénticas,
+    // pero forzamos su expiración inmediata.
+    res.cookie('token', '', {
+      ...getCookieOptions(),
+      maxAge: 0,
+      expires: new Date(0),
     });
+
     return res.json({ success: true, message: 'Logged Out' });
   } catch (error) {
     return res.json({ success: false, message: error.message });
