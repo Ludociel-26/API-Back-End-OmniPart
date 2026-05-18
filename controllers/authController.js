@@ -14,6 +14,7 @@ const getCookieOptions = () => ({
   secure: process.env.NODE_ENV === 'production',
   sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   maxAge: 12 * 60 * 60 * 1000, // 12 horas
+  path: '/', // 🚩 CRÍTICO: Obliga al navegador a aplicar los cambios en todo el dominio
 });
 
 // =======================================================================
@@ -66,17 +67,23 @@ export const register = async (req, res) => {
       is_active: true,
     });
 
-    const token = jwt.sign(
+    // 🚩 Patrón Dual: Access Token (Corto)
+    const accessToken = jwt.sign(
       { id: user.id, role: user.rol_id },
       process.env.JWT_SECRET,
-      { expiresIn: '12h' },
+      { expiresIn: '15m' },
     );
 
-    user.auth_token = token;
+    // 🚩 Patrón Dual: Refresh Token (Largo)
+    const refreshToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: '12h',
+    });
+
+    user.auth_token = refreshToken;
     await user.save();
 
-    // Inyección segura
-    res.cookie('token', token, getCookieOptions());
+    // Inyección segura del Refresh Token en cookie
+    res.cookie('refresh_token', refreshToken, getCookieOptions());
 
     try {
       const mailOptions = {
@@ -93,7 +100,11 @@ export const register = async (req, res) => {
       console.warn('Correo de bienvenida omitido:', mailErr.message);
     }
 
-    return res.json({ success: true, message: 'Registrado exitosamente' });
+    return res.json({
+      success: true,
+      message: 'Registrado exitosamente',
+      token: accessToken,
+    });
   } catch (error) {
     if (
       error.name === 'SequelizeValidationError' ||
@@ -140,16 +151,23 @@ export const login = async (req, res) => {
       return res.json({ success: false, message: 'Invalid password' });
     }
 
-    const token = jwt.sign(
+    // 🚩 Patrón Dual: Access Token (Corto - 15m)
+    const accessToken = jwt.sign(
       { id: user.id, role: user.rol_id },
       process.env.JWT_SECRET,
-      { expiresIn: '12h' },
+      { expiresIn: '15m' },
     );
 
-    // Inyección segura
-    res.cookie('token', token, getCookieOptions());
+    // 🚩 Patrón Dual: Refresh Token (Largo - 12h)
+    const refreshToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: '12h',
+    });
 
-    return res.json({ success: true, role: user.rol_id });
+    // Inyección segura del Refresh Token en cookie
+    res.cookie('refresh_token', refreshToken, getCookieOptions());
+
+    // Devolvemos el Access Token en el JSON
+    return res.json({ success: true, token: accessToken });
   } catch (error) {
     return res
       .status(500)
@@ -158,18 +176,53 @@ export const login = async (req, res) => {
 };
 
 // =======================================================================
+// 2.5 RENOVACIÓN DE TOKEN (NUEVO ENDPOINT)
+// =======================================================================
+export const refreshToken = async (req, res) => {
+  try {
+    const rfToken = req.cookies.refresh_token;
+
+    if (!rfToken) {
+      return res
+        .status(401)
+        .json({ success: false, message: 'No refresh token provided' });
+    }
+
+    const decoded = jwt.verify(rfToken, process.env.JWT_SECRET);
+
+    const user = await User.findByPk(decoded.id);
+    if (!user || !user.is_active) {
+      return res.status(403).json({ success: false, message: 'User invalid' });
+    }
+
+    const newAccessToken = jwt.sign(
+      { id: user.id, role: user.rol_id },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' },
+    );
+
+    return res.json({ success: true, accessToken: newAccessToken });
+  } catch (error) {
+    return res
+      .status(403)
+      .json({ success: false, message: 'Refresh token expired' });
+  }
+};
+
+// =======================================================================
 // 3. CERRAR SESIÓN
 // =======================================================================
 export const logout = async (req, res) => {
   try {
-    // En lugar de clearCookie, sobrescribimos el token usando getCookieOptions()
-    // para garantizar que las reglas (secure, sameSite) sean exactamente idénticas,
-    // pero forzamos su expiración inmediata.
-    res.cookie('token', '', {
+    const killOptions = {
       ...getCookieOptions(),
       maxAge: 0,
       expires: new Date(0),
-    });
+    };
+
+    // 🚩 Destruimos ambas cookies para que no quede ningún rastro fantasma
+    res.cookie('refresh_token', '', killOptions);
+    res.cookie('token', '', killOptions);
 
     return res.json({ success: true, message: 'Logged Out' });
   } catch (error) {
