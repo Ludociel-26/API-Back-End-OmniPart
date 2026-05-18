@@ -12,8 +12,7 @@ import {
 const getCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  // ⚠️ CRÍTICO: En producción DEBE ser 'none' para permitir Cross-Site cookies
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
   maxAge: 12 * 60 * 60 * 1000, // 12 horas
 });
 
