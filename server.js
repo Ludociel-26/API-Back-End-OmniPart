@@ -6,6 +6,18 @@ import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import bodyParser from 'body-parser';
 
+// =======================================================================
+// 🚩 FAIL-FAST: VALIDACIÓN DE VARIABLES DE ENTORNO CRÍTICAS
+// =======================================================================
+// Si la semilla criptográfica no existe, detenemos el servidor de inmediato
+// para evitar brechas de seguridad en la emisión de tokens JWT.
+if (!process.env.JWT_SECRET) {
+  console.error(
+    '❌ FATAL ERROR: La variable JWT_SECRET no está definida en el archivo .env',
+  );
+  process.exit(1);
+}
+
 // Importaciones de los módulos path
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -82,7 +94,7 @@ app.use(
       return callback(new Error('Bloqueado por CORS'));
     },
 
-    credentials: true,
+    credentials: true, // Vital para el envío y recepción de cookies
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-forwarded-for'],
   }),
@@ -126,6 +138,21 @@ app.use(limiter);
 // =======================================================================
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
+
+// =======================================================================
+// 🚩 7.5. PREVENCIÓN DE CACHÉ (EL FIX DEFINITIVO PARA LAS COOKIES)
+// =======================================================================
+// Este middleware inyecta cabeceras HTTP que prohíben al navegador (Chrome/Safari)
+// cachear las respuestas de la API. Así, el Heartbeat de tu Front-End siempre
+// impactará el servidor real. Si borras la cookie, el backend responderá 401
+// instantáneamente y tu interceptor original hará su trabajo.
+
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // =======================================================================
 // 🚩 8. RUTAS DE LA API

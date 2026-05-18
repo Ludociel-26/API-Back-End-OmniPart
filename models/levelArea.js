@@ -1,30 +1,47 @@
 import { DataTypes } from 'sequelize';
 import { sequelize } from '../config/postgresdb.js';
 
-const levelArea = sequelize.define('levelArea', {
-  area_id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
-  },
-  level: {
-    type: DataTypes.STRING,
-    unique: true,
-    allowNull: false,
-  },
-  descripcion: {
-    type: DataTypes.STRING,
-    allowNull: true,
-  },
-  // NUEVO CAMPO: color
-  color: {
-    type: DataTypes.STRING(7), // Longitud máxima para #RRGGBB
-    allowNull: false,
-    defaultValue: '#fcfcfc', // Gris por defecto si no se manda nada
-    validate: {
-      is: /^#([0-9A-F]{3}){1,2}$/i, // Valida que sea un hex válido
+const LevelArea = sequelize.define(
+  'levelArea',
+  {
+    area_id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    level: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      // 🚩 QUITAMOS unique: true de aquí
+    },
+    descripcion: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    color: {
+      type: DataTypes.STRING(7),
+      allowNull: false,
+      defaultValue: '#fcfcfc',
+      validate: {
+        is: /^#([0-9A-F]{3}){1,2}$/i,
+      },
     },
   },
-});
+  {
+    // 🛡️ 1. Activamos el Soft Delete
+    paranoid: true,
 
-export default levelArea;
+    // 🛡️ 2. Índice Parcial
+    indexes: [
+      {
+        unique: true,
+        fields: ['level'],
+        where: {
+          deletedAt: null, // Permite crear un área "Ventas" si la anterior "Ventas" fue borrada lógicamente
+        },
+      },
+    ],
+  },
+);
+
+export default LevelArea;

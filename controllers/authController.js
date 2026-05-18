@@ -8,6 +8,15 @@ import {
   PASSWORD_RESET_TEMPLATE,
 } from '../config/emailTemplates.js';
 
+// 🚩 Opciones globales y dinámicas de seguridad para Cookies
+const getCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  // ⚠️ CRÍTICO: En producción DEBE ser 'none' para permitir Cross-Site cookies
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 12 * 60 * 60 * 1000, // 12 horas
+});
+
 // =======================================================================
 // 1. REGISTRO PÚBLICO
 // =======================================================================
@@ -58,7 +67,6 @@ export const register = async (req, res) => {
       is_active: true,
     });
 
-    // 🚩 AWS STYLE: Token de 12 Horas de vida máxima
     const token = jwt.sign(
       { id: user.id, role: user.rol_id },
       process.env.JWT_SECRET,
@@ -68,13 +76,8 @@ export const register = async (req, res) => {
     user.auth_token = token;
     await user.save();
 
-    // 🚩 AWS STYLE: Cookie muere exactamente a las 12 horas (12h * 60m * 60s * 1000ms)
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-      maxAge: 12 * 60 * 60 * 1000,
-    });
+    // Inyección segura
+    res.cookie('token', token, getCookieOptions());
 
     try {
       const mailOptions = {
@@ -127,9 +130,9 @@ export const login = async (req, res) => {
     }
 
     if (!user.is_active) {
-      return res.json({
+      return res.status(403).json({
         success: false,
-        message: 'Tu cuenta ha sido deshabilitada por el administrador.',
+        message: 'ACCOUNT_DISABLED_FORCE_LOGOUT',
       });
     }
 
@@ -138,20 +141,14 @@ export const login = async (req, res) => {
       return res.json({ success: false, message: 'Invalid password' });
     }
 
-    // 🚩 AWS STYLE: Token de 12 Horas de vida máxima
     const token = jwt.sign(
       { id: user.id, role: user.rol_id },
       process.env.JWT_SECRET,
       { expiresIn: '12h' },
     );
 
-    // 🚩 AWS STYLE: Cookie de 12 Horas
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-      maxAge: 12 * 60 * 60 * 1000,
-    });
+    // Inyección segura
+    res.cookie('token', token, getCookieOptions());
 
     return res.json({ success: true, role: user.rol_id });
   } catch (error) {
@@ -166,10 +163,11 @@ export const login = async (req, res) => {
 // =======================================================================
 export const logout = async (req, res) => {
   try {
+    // Al limpiar, respetamos las mismas políticas para destruir la cookie correctamente
     res.clearCookie('token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     });
     return res.json({ success: true, message: 'Logged Out' });
   } catch (error) {

@@ -5,14 +5,19 @@ const userAuth = async (req, res, next) => {
   const { token } = req.cookies;
 
   if (!token) {
-    return res.json({ success: false, message: 'Not Authorized. Login Again' });
+    return res
+      .status(401)
+      .json({
+        success: false,
+        message: 'Sesión no encontrada. Por favor, ingresa nuevamente.',
+      });
   }
 
   try {
     const tokenDecode = jwt.verify(token, process.env.JWT_SECRET);
 
     if (tokenDecode.id) {
-      // 🛡️ VERIFICACIÓN EN TIEMPO REAL A LA BASE DE DATOS
+      // 🛡️ VERIFICACIÓN A LA BASE DE DATOS
       const user = await User.findByPk(tokenDecode.id);
 
       // Si el usuario no existe o fue deshabilitado (is_active: false)
@@ -23,10 +28,11 @@ const userAuth = async (req, res, next) => {
           sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
         });
 
-        // Retornamos exactamente este mensaje para que el Front-end dispare el Modal
+        // 🚩 MENSAJE ELABORADO PARA EL USUARIO (UX)
         return res.status(403).json({
           success: false,
-          message: 'ACCOUNT_DISABLED_FORCE_LOGOUT',
+          message:
+            'Tu acceso ha sido suspendido temporalmente. Por favor, contacta al administrador del sistema para revisar el estado de tu cuenta.',
         });
       }
 
@@ -37,10 +43,13 @@ const userAuth = async (req, res, next) => {
     } else {
       return res
         .status(401)
-        .json({ success: false, message: 'Not Authorized. Login Again' });
+        .json({
+          success: false,
+          message: 'Autorización denegada. Token inválido.',
+        });
     }
   } catch (error) {
-    // 🚩 AWS STYLE: Detección estricta de caducidad
+    // 🚩 Detección estricta de caducidad
     if (error.name === 'TokenExpiredError') {
       res.clearCookie('token', {
         httpOnly: true,
@@ -49,10 +58,18 @@ const userAuth = async (req, res, next) => {
       });
       return res
         .status(401)
-        .json({ success: false, message: 'SESSION_EXPIRED' });
+        .json({
+          success: false,
+          message: 'Tu sesión ha caducado por seguridad.',
+        });
     }
 
-    return res.status(401).json({ success: false, message: 'Invalid Token' });
+    return res
+      .status(401)
+      .json({
+        success: false,
+        message: 'El token de seguridad ha sido manipulado o es inválido.',
+      });
   }
 };
 
